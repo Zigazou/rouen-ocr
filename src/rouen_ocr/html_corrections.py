@@ -164,6 +164,27 @@ class HtmlCorrections(HtmlWork):
 
         return self
 
+    def remove_footers_and_headers(self) -> Self:
+        """Remove the footer and header from the HTML document.
+
+        This method removes the footer and header from the HTML document, which
+        are not part of the document content.  The footer and header are
+        identified by their data-label attributes, which are added by the OCR
+        model.
+        """
+        footers_headers = self.soup.find_all(
+            "div",
+            attrs={"data-label": True}
+        )
+        
+        for div in footers_headers:
+            if div.get("data-label") in ["Page-Header", "Page-Footer"]:
+                div.decompose()
+
+        self.remember("remove_footers_and_headers")
+
+        return self
+
     def set_title_from_first_heading(self) -> Self:
         """Set the title of the HTML document from the first heading.
 
@@ -180,6 +201,7 @@ class HtmlCorrections(HtmlWork):
 
     def correct(self) -> Self:
         """Apply all HTML corrections in the proper order."""
+        self.remove_footers_and_headers()
         self.remove_chandra_divs()
         self.increase_heading_levels()
         self.remove_unneeded_brs()

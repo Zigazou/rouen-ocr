@@ -1,5 +1,7 @@
 """Base class."""
 
+from typing import Self
+
 from bs4 import BeautifulSoup
 
 
@@ -11,9 +13,14 @@ class MissingStepError(ValueError):
 class HtmlWork:
     """Base class for HTML work."""
 
-    def __init__(self, html: str):
+    def __init__(self, html: str | object) -> None:
         self.steps = []
-        self.parse(html)
+        if isinstance(html, HtmlWork):
+            self.soup = html.soup
+        elif isinstance(html, str):
+            self.parse(html)
+        else:
+            raise TypeError(f"Invalid type for html: {type(html)}")
 
     def parse(self, html: str) -> None:
         """Parse the HTML document or fragment."""

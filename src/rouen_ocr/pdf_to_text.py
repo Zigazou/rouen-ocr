@@ -10,6 +10,7 @@ from ollama import chat, ResponseError
 
 from rouen_ocr.pdf_to_images import convert_pdf, positive_scale
 from rouen_ocr.html_corrections import HtmlCorrections
+from rouen_ocr.html_image_retriever import HtmlImageRetriever
 
 
 # The OCR model to use for converting images to text.  This model must be
@@ -170,9 +171,7 @@ def html_document(page_fragments: Sequence[str]) -> str:
         f"<body>\n{html_body_content}\n</body>\n</html>\n"
     )
 
-    corrected = HtmlCorrections(html_content).correct()
-
-    return str(corrected)
+    return html_content
 
 
 def show_progress(stage: str, completing: int, total: int) -> None:
@@ -189,6 +188,14 @@ def show_progress_rendering(completing: int, total: int) -> None:
     """
     show_progress("Rendering", completing, total)
 
+def show_progress_replacing(replacing: int, total: int) -> None:
+    """Print the current progress for replacing images in HTML.
+
+    Input:
+        replacing: The number of images replaced so far.
+        total: The total number of images to replace.
+    """
+    show_progress("Replacing images", replacing, total)
 
 def convert_pdf_to_text(
     input_pdf: Path,
@@ -212,6 +219,8 @@ def convert_pdf_to_text(
     Output:
         The number of pages OCRed.
     """
+
+    # Render the PDF pages to PNG files.
     page_count = convert_pdf(
         input_pdf,
         images_dir,
@@ -219,8 +228,8 @@ def convert_pdf_to_text(
         show_progress_rendering,
     )
 
+    # OCR each page and collect the HTML fragments.
     page_text = []
-
     for number in range(1, page_count + 1):
         show_progress("OCRizing", number, page_count)
 
@@ -232,9 +241,21 @@ def convert_pdf_to_text(
             )
         )
 
+    # Make an HTML document containing all pages, each wrapped in a ``section``
+    # element with a ``data-page-number`` attribute.
+    html = html_document(page_text)
+
+    # Ensure the output directory exists.
     output_text.parent.mkdir(parents=True, exist_ok=True)
 
-    output_text.write_text(html_document(page_text), encoding="utf-8")
+    # Replace the images in the HTML fragments with data URI.
+    image_retriever = HtmlImageRetriever(html)
+    image_retriever.replace_images(input_pdf, show_progress_replacing)
+
+    corrected = HtmlCorrections(image_retriever).correct()
+
+    # Write the combined HTML document to the output file.
+    output_text.write_text(str(corrected), encoding="utf-8")
 
     return page_count
 

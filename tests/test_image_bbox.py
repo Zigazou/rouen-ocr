@@ -22,7 +22,7 @@ def test_from_chandra_attribute_invalid() -> None:
         "1 2 3 1111",      # Too large value
         "10 20 30",        # Too few values
         "10 20 30 40 50",  # Too many values
-        "10 20 thirty 40",  # Non-integer value
+        "10 20 thirty 40", # Non-integer value
         "10,20,30,40",     # Comma-separated values
         "",                # Empty string
     ]
@@ -54,16 +54,15 @@ def test_translate_coordinates() -> None:
         (0, 0, image_width, image_height),
     ]
 
-    tests = zip(bboxes, expecteds)
-
-    for bbox, expected in tests:
+    for bbox, expected in zip(bboxes, expecteds):
         translated = bbox.translate_coordinates(image_width, image_height)
         assert translated == expected
 
 def test_id_generation() -> None:
     """Test that ImageBBox generates unique identifiers correctly."""
-    bbox = ImageBBox(10, 20, 30, 40)
     base = "page1"
-    expected_id = "page1-10-20-30-40"
 
-    assert bbox.id(base) == expected_id
+    assert ImageBBox(1, 2, 3, 4).id(base) == "page1-1-2-3-4"
+    assert ImageBBox(1, 2, 3, 4, 3).id(base) == "page1-1-2-3-4"
+    assert ImageBBox(1, 2, 3, 4, 3).id() == "page3-1-2-3-4"
+    assert ImageBBox(1, 2, 3, 4).id() == "bbox-1-2-3-4"
