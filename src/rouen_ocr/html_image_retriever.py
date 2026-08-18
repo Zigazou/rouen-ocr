@@ -276,18 +276,7 @@ class HtmlImageRetriever(HtmlWork):
         if self.document is None:
             raise RuntimeError("PDF document is not open.")
 
-        image = self.document.extract_image(xref)
-        soft_mask_xref = image.get("smask", 0)
-        pixmap = Pixmap(self.document, xref)
-
-        if soft_mask_xref <= 0:
-            # No soft mask, so we can return the image bytes directly.
-            return pixmap.tobytes(PYMUPDF_JPEG)
-
-        # Retrieve the soft mask and combine it with the main image to produce
-        # a JPEG.
-        mask = Pixmap(self.document, soft_mask_xref)
-        return Pixmap(pixmap, mask).tobytes(PYMUPDF_JPEG)
+        return Pixmap(self.document, xref).tobytes(PYMUPDF_JPEG)
 
     def _get_native_crop(
         self,
