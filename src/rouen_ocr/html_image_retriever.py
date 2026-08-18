@@ -174,6 +174,7 @@ class HtmlImageRetriever(HtmlWork):
             if candidate is not None:
                 info, image_rect, coverage = candidate
                 xref = info.get("xref", 0)
+
                 if xref > 0 and coverage >= match_threshold:
                     image_area = image_rect.get_area()
                     target_area = target.get_area()
@@ -201,7 +202,7 @@ class HtmlImageRetriever(HtmlWork):
                 annots=False,
             )
 
-            self.images[bbox_id] = pixmap.tobytes("JPEG")
+            self.images[bbox_id] = pixmap.tobytes(PYMUPDF_JPEG)
 
     def _pdf_rect(self, page_rect: Rect, bbox: ImageBBox) -> Rect:
         """Translate a normalized Chandra bounding box to PDF coordinates.
@@ -250,12 +251,18 @@ class HtmlImageRetriever(HtmlWork):
         return best
 
     def _contains(self, outer: Rect, inner: Rect) -> bool:
-        """Return whether ``outer`` completely contains ``inner``."""
+        """Return whether ``outer`` completely contains ``inner``.
+
+        Input:
+            outer: The outer rectangle.
+            inner: The inner rectangle.
+
+        Output:
+            True if ``outer`` completely contains ``inner``, False otherwise.
+        """
         return (
-            outer.x0 <= inner.x0 and
-            outer.y0 <= inner.y0 and
-            outer.x1 >= inner.x1 and
-            outer.y1 >= inner.y1
+            outer.x0 <= inner.x0 and outer.y0 <= inner.y0 and
+            outer.x1 >= inner.x1 and outer.y1 >= inner.y1
         )
 
     def _is_axis_aligned(self, info: dict) -> bool:
@@ -263,6 +270,10 @@ class HtmlImageRetriever(HtmlWork):
 
         Input:
             info: The dictionary returned by PyMuPDF's get_image_info().
+
+        Output:
+            True if the PDF image can be cropped without rotation handling,
+            False otherwise.
         """
         transform = info.get("transform")
 
@@ -272,7 +283,17 @@ class HtmlImageRetriever(HtmlWork):
         return (transform[1] == 0 and transform[2] == 0)
 
     def _image_bytes(self, xref: int) -> bytes:
-        """Return image data, reconstructing a soft mask when one is present."""
+        """Return image data, reconstructing a soft mask when one is present.
+
+        Input:
+            xref: The PDF image's xref number.
+
+        Output:
+            The image data in JPEG format.
+
+        Raises:
+            RuntimeError: If the PDF document is not open.
+        """
         if self.document is None:
             raise RuntimeError("PDF document is not open.")
 
@@ -299,25 +320,14 @@ class HtmlImageRetriever(HtmlWork):
         stream = BytesIO()
 
         with Image.open(image_bytes) as image:
-            left = round(
-                (target.x0 - image_rect.x0) / image_rect.width * image.width
-            )
-
-            top = round(
-                (target.y0 - image_rect.y0) / image_rect.height * image.height
-            )
-
-            right = round(
-                (target.x1 - image_rect.x0) / image_rect.width * image.width
-            )
-
-            bottom = round(
-                (target.y1 - image_rect.y0) / image_rect.height * image.height
-            )
+            left, top, right, bottom = map(round, [
+                (target.x0 - image_rect.x0) / image_rect.width * image.width,
+                (target.y0 - image_rect.y0) / image_rect.height * image.height,
+                (target.x1 - image_rect.x0) / image_rect.width * image.width,
+                (target.y1 - image_rect.y0) / image_rect.height * image.height,
+            ])
 
             image.crop((left, top, right, bottom)).save(
-                stream,
-                format=PIL_JPEG
-            )
+                stream, format=PIL_JPEG)
 
         return stream.getvalue()
