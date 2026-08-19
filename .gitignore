@@ -20,6 +20,7 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+tests/real
 
 # Local tooling and editor files
 .idea/
