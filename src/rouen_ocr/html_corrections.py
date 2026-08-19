@@ -338,6 +338,7 @@ class HtmlCorrections(HtmlWork):
         """Apply all HTML corrections in the proper order."""
         return (self
             .group_nearby_text_divs()
+            .remove_footers_and_headers()
             .remove_chandra_divs()
             .increase_heading_levels()
             .remove_unneeded_brs()

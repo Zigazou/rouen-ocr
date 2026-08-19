@@ -12,6 +12,7 @@ The coordinates are normalized to a 0--1000 page coordinate system.
 from __future__ import annotations
 from base64 import b64encode
 from typing import Callable, Self
+from logging import getLogger
 
 from pymupdf import Document, Pixmap, Matrix, Rect
 
@@ -21,10 +22,12 @@ from pathlib import Path
 
 from rouen_ocr.html_work import HtmlWork
 from rouen_ocr.bbox import BBox
+from rouen_ocr.textual_alternative import alt_image
 
 PYMUPDF_JPEG = "jpg"
 PIL_JPEG = "JPEG"
 
+logger = getLogger(__name__)
 
 class HtmlImageRetriever(HtmlWork):
     def __init__(self, html: str | object) -> None:
@@ -117,8 +120,22 @@ class HtmlImageRetriever(HtmlWork):
                 f"{b64encode(image_bytes).decode('utf-8')}"
             )
 
+            logger.info(
+                "Generating textual alternative for image "
+                f"at {bbox} on page {bbox.page}"
+            )
+
+            textual_alternative = alt_image(image_bytes)
+
             div.clear()
-            div.append(self.soup.new_tag("img", src=data_uri))
+
+            img = self.soup.new_tag(
+                "img",
+                src=data_uri,
+                alt=textual_alternative
+            )
+
+            div.append(img)
 
         return self
 

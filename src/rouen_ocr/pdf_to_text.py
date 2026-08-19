@@ -22,7 +22,6 @@ logger = getLogger(__name__)
 # want to use a different model, you must change the OCR chain to work with your
 # model's output.
 OCR_MODEL = "hf.co/prithivMLmods/Chandra-OCR-2-GGUF:Q4_K_M"
-# OCR_MODEL = "fredrezones55/chandra-ocr-2:latest"
 
 # The document types that can be provided to the OCR model. The default is
 # "auto", which lets the model decide the document type.  Other options are
