@@ -1,7 +1,5 @@
 """Base class."""
 
-from typing import Self
-
 from bs4 import BeautifulSoup
 
 
@@ -36,6 +34,23 @@ class HtmlWork:
             step: The name of the step that has been done.
         """
         self.steps.append(step)
+
+    def must_not_have(self, steps: str | list[str]) -> None:
+        """Ensure a step has not been done.
+
+        Some steps may depend on specific previous steps. This method checks
+        that the specified steps have not been done, and raises an exception if
+        they have.
+
+        Input:
+            steps: A step name or a list of step names that must not have been
+            done.
+        """
+        if isinstance(steps, list):
+            for step in steps:
+                self.must_not_have(step)
+        elif steps in self.steps:
+            raise ValueError(f"Step {steps} has already been done.")
 
     def require_step(self, steps: str | list[str]) -> None:
         """Ensure a required step has been done.

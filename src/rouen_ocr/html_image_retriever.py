@@ -20,33 +20,32 @@ from io import BytesIO
 from pathlib import Path
 
 from rouen_ocr.html_work import HtmlWork
-from rouen_ocr.image_bbox import ImageBBox
+from rouen_ocr.bbox import BBox
 
 PYMUPDF_JPEG = "jpg"
 PIL_JPEG = "JPEG"
 
 
 class HtmlImageRetriever(HtmlWork):
-    def __init__(self, html: str) -> None:
+    def __init__(self, html: str | object) -> None:
         """Initialize the retriever with the HTML document or fragment.
 
         Input:
-            html: The HTML document or fragment to process.
+            html: The HTML document or fragment to process. It can be a string
+                or a BeautifulSoup object.
         """
         super().__init__(html)
 
         self.document = None
         self.images = {}
+        self.bboxes = []
+        self.find_images()
 
-    def find_images(self) -> list[ImageBBox]:
+    def find_images(self) -> None:
         """Find all images in the HTML document or fragment.
 
         Images are identified by a div tag with an attribute data-label set to
         "Image", i.e. `<div data-bbox="78 12 146 83" data-label="Image">`.
-
-        Output:
-            A list of all ImageBBox instances in the HTML.
-
         """
 
         # Find all section tags with a data-page-number attribute.
@@ -55,7 +54,7 @@ class HtmlImageRetriever(HtmlWork):
             attrs={"data-page-number": True}
         )
 
-        bboxes = []
+        self.bboxes = []
         for section in sections:
             page_number = section.get("data-page-number")
             if not isinstance(page_number, str) or not page_number.isdigit():
@@ -71,11 +70,9 @@ class HtmlImageRetriever(HtmlWork):
                 if not isinstance(bbox_str, str):
                     continue
 
-                bboxes.append(
-                    ImageBBox.from_chandra_attribute(bbox_str, page_number)
+                self.bboxes.append(
+                    BBox.from_chandra_attribute(bbox_str, page_number)
                 )
-
-        return bboxes
 
     def replace_images(
         self,
@@ -98,7 +95,8 @@ class HtmlImageRetriever(HtmlWork):
             self.extract_images(page_number + 1)
 
         # Replace the div tags with the extracted images.
-        for bbox in self.find_images():
+        
+        for bbox in self.bboxes:
             div = self.soup.find(
                 "div",
                 {"data-bbox": bbox.to_chandra_attribute()}
@@ -166,7 +164,7 @@ class HtmlImageRetriever(HtmlWork):
 
         image_infos = page.get_image_info(xrefs=True)
 
-        for bbox in self.find_images():
+        for bbox in [bbox for bbox in self.bboxes if bbox.page == page_number]:
             target = self._pdf_rect(page.rect, bbox)
             bbox_id = bbox.id()
             candidate = self._best_image_candidate(image_infos, target)
@@ -204,7 +202,7 @@ class HtmlImageRetriever(HtmlWork):
 
             self.images[bbox_id] = pixmap.tobytes(PYMUPDF_JPEG)
 
-    def _pdf_rect(self, page_rect: Rect, bbox: ImageBBox) -> Rect:
+    def _pdf_rect(self, page_rect: Rect, bbox: BBox) -> Rect:
         """Translate a normalized Chandra bounding box to PDF coordinates.
 
         Input:

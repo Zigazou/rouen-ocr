@@ -19,7 +19,7 @@ coordinates.
 from typing import Self
 
 
-class ImageBBox:
+class BBox:
     def __init__(
         self,
         x0_1000: int,
@@ -28,7 +28,7 @@ class ImageBBox:
         y1_1000: int,
         page: int | None = None
     ) -> None:
-        """Initialize an ImageBBox with coordinates in the range [0, 1000].
+        """Initialize an BBox with coordinates in the range [0, 1000].
 
         Input:
             x0_1000: The x-coordinate of the top-left corner (0-1000).
@@ -47,7 +47,7 @@ class ImageBBox:
             for value in (x0_1000, y0_1000, x1_1000, y1_1000)
         ):
             raise ValueError(
-                "Invalid Chandra attribute values: "
+                "Invalid BBox attribute values: "
                 f"{(x0_1000, y0_1000, x1_1000, y1_1000)}"
             )
 
@@ -60,6 +60,89 @@ class ImageBBox:
         self.y1_1000 = y1_1000
         
         self.page = page
+
+    def overlaps_with(self, other: Self) -> bool:
+        """Check if this bounding box overlaps with another bounding box.
+
+        Input:
+            other: Another BBox instance to check for overlap.
+
+        Output:
+            True if the bounding boxes overlap, False otherwise.
+        """
+        return not (
+            self.x1_1000 < other.x0_1000 or self.x0_1000 > other.x1_1000 or
+            self.y1_1000 < other.y0_1000 or self.y0_1000 > other.y1_1000
+        )
+
+    def is_followed_by(self, other: Self) -> bool:
+        """Check if this bounding box is followed by another bounding box.
+
+        Input:
+            other: Another BBox instance to check against.
+
+        Output:
+            True if this bounding box is followed by the other bounding box,
+            False otherwise.
+        """
+        if self.x0_1000 != other.x0_1000 or self.x1_1000 != other.x1_1000:
+            return False
+
+        if self.overlaps_with(other):
+            return True
+
+        vertical_gap = other.y0_1000 - self.y1_1000
+
+        return 0 <= vertical_gap < 10
+
+
+    def is_before(self, other: Self) -> bool:
+        """Check if this bounding box is before another bounding box.
+
+        Input:
+            other: Another BBox instance to check against.
+
+        Output:
+            True if this bounding box is before the other bounding box, False
+            otherwise.
+        """
+        if self.y0_1000 < other.y0_1000:
+            return True
+
+        return (
+            self.y0_1000 == other.y0_1000
+            and self.x0_1000 < other.x0_1000
+        )
+
+    def smallest_distance_to_border(self, other: Self) -> float:
+        """Calculate the smallest distance from this bounding box to another
+        bounding box.
+
+        Input:
+            other: Another BBox instance to calculate the distance to.
+
+        Output:
+            The smallest distance from this bounding box to the other bounding
+            box.
+        """
+        if self.overlaps_with(other):
+            return 0.0
+
+        # Calculate the horizontal and vertical distances
+        horizontal_distance = max(
+            0,
+            other.x0_1000 - self.x1_1000,
+            self.x0_1000 - other.x1_1000
+        )
+
+        vertical_distance = max(
+            0,
+            other.y0_1000 - self.y1_1000,
+            self.y0_1000 - other.y1_1000
+        )
+
+        # Return the Euclidean distance
+        return (horizontal_distance**2 + vertical_distance**2) ** 0.5
 
     def translate_coordinates(
         self,
@@ -109,7 +192,7 @@ class ImageBBox:
         attribute: str,
         page_number: int | None = None
     ) -> Self:
-        """Create an ImageBBox from a Chandra image attribute string.
+        """Create an BBox from a Chandra image attribute string.
 
         Input:
             attribute: A string of four integers in the range [0, 1000],
@@ -118,7 +201,7 @@ class ImageBBox:
                 (optional).
 
         Output:
-            An ImageBBox instance with the specified coordinates and page
+            An BBox instance with the specified coordinates and page
             number.
         """
         # The attribute string is in the format "x0 y0 x1 y1" and must contain

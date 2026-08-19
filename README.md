@@ -60,3 +60,9 @@ Use `--model` to select the Ollama model identifier. Use
 `--images-dir` to choose another directory for the rendered pages, and
 `--scale` to change rendering resolution.
 Use `--document-type` to tell the model whether the document is `magazine`, `administrative`, or `commercial`; the default is `auto`.
+
+Higher `--scale` values produce more vision tokens per page. If Ollama's
+context window is too small, the model accepts the image but returns empty or
+truncated OCR text; `OCR_NUM_CTX` in `pdf_to_text.py` raises the context window
+to cover this. Increase it further if OCR still fails on very large pages.
+

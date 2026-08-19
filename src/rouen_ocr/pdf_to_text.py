@@ -5,33 +5,58 @@ from __future__ import annotations
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import Sequence
+from logging import basicConfig, DEBUG, INFO, getLogger
 
 from ollama import chat, ResponseError
 
 from rouen_ocr.pdf_to_images import convert_pdf, positive_scale
 from rouen_ocr.html_corrections import HtmlCorrections
 from rouen_ocr.html_image_retriever import HtmlImageRetriever
+from rouen_ocr.html_document import HtmlDocument
 
+logger = getLogger(__name__)
 
 # The OCR model to use for converting images to text.  This model must be
 # available to the local Ollama service. IT MUST BE a Chandra OCR 2 model
 # because the OCR chain is designed to work with that model's output. If you
 # want to use a different model, you must change the OCR chain to work with your
 # model's output.
-OCR_MODEL = "fredrezones55/chandra-ocr-2:latest"
+OCR_MODEL = "hf.co/prithivMLmods/Chandra-OCR-2-GGUF:Q4_K_M"
+# OCR_MODEL = "fredrezones55/chandra-ocr-2:latest"
 
 # The document types that can be provided to the OCR model. The default is
 # "auto", which lets the model decide the document type.  Other options are
 # "magazine", "administrative", and "commercial".
 DOCUMENT_TYPES = ("auto", "magazine", "administrative", "commercial")
 
+# Ollama's default context window (2048 tokens) is easily filled by the vision
+# tokens of a single high-resolution page, silently truncating the prompt and
+# leaving no room for the model to produce OCR text. Raising num_ctx avoids
+# this failure at higher --scale values; increase it further for very large
+# pages if OCR output is still empty or truncated.
+OCR_NUM_CTX = 16384
+
 # The base prompt to provide to the OCR model. This prompt is always provided,
 # and additional instructions are added depending on the document type and page
 # number.
-OCR_BASE_PROMPT = f"""OCR this image.
-Return ONLY HTML.
+OCR_BASE_PROMPT = """
+OCR this image to HTML, arranged as layout blocks.
+
+Each layout block must be a div with:
+- a data-bbox attribute in normalized x0 y0 x1 y1 coordinates from 0 to 1000;
+- a data-label attribute describing the block type.
+
+Preserve the natural reading order, paragraphs, headings, lists, tables,
+forms, checkboxes, special characters, subscripts, superscripts, and equations.
+
+Use colspan and rowspan to reproduce table structure.
+Use <math> with KaTeX-compatible LaTeX for mathematical expressions.
+For images and diagrams, provide an accurate description in the alt attribute.
+Join wrapped text lines into paragraphs unless a line break is semantically required.
+
+Return only HTML.
 Do not use Markdown fences.
-Do not add any explanation before or after the HTML.
+Do not add explanations before or after the HTML.
 """
 
 
@@ -90,8 +115,8 @@ def build_parser() -> ArgumentParser:
     parser.add_argument(
         "--scale",
         type=positive_scale,
-        default=2,
-        help="PDF render scale (default: 2, 144 DPI)",
+        default=4,
+        help="PDF render scale (default: 4, 288 DPI)",
     )
 
     parser.add_argument(
@@ -99,6 +124,12 @@ def build_parser() -> ArgumentParser:
         choices=DOCUMENT_TYPES,
         default="auto",
         help="document type to provide to OCR (default: auto)",
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="enable debugging information",
     )
 
     return parser
@@ -139,7 +170,14 @@ def ocr_image(
                     "images": [image_path],
                 }
             ],
-            options={"temperature": 0},
+            options={
+                "temperature": 0.0,
+                "top_p": 0.1,
+                "num_ctx": OCR_NUM_CTX,
+                "num_predict": 12384,
+                "repeat_penalty": 1.0,
+                "seed": 0,
+            },
             think=False,
         )
     except ResponseError as error:
@@ -151,7 +189,7 @@ def ocr_image(
     return result.message.content
 
 
-def html_document(page_fragments: Sequence[str]) -> str:
+def html_document(page_fragments: Sequence[str]) -> HtmlDocument:
     """Build one HTML document containing the OCR results for all pages.
 
     Input:
@@ -161,17 +199,12 @@ def html_document(page_fragments: Sequence[str]) -> str:
         A complete HTML document containing all pages, each wrapped in a
         ``section`` element with a ``data-page-number`` attribute.
     """
-    html_body_content = "\n".join(
-        f'<section data-page-number="{number}">\n{fragment}\n</section>'
-        for number, fragment in enumerate(page_fragments, start=1)
-    )
+    html = HtmlDocument("")
 
-    html_content = (
-        "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"></head>\n"
-        f"<body>\n{html_body_content}\n</body>\n</html>\n"
-    )
+    for number, fragment in enumerate(page_fragments, start=1):
+        html.append_page(fragment, number)
 
-    return html_content
+    return html
 
 
 def show_progress(stage: str, completing: int, total: int) -> None:
@@ -188,6 +221,7 @@ def show_progress_rendering(completing: int, total: int) -> None:
     """
     show_progress("Rendering", completing, total)
 
+
 def show_progress_replacing(replacing: int, total: int) -> None:
     """Print the current progress for replacing images in HTML.
 
@@ -197,11 +231,12 @@ def show_progress_replacing(replacing: int, total: int) -> None:
     """
     show_progress("Replacing images", replacing, total)
 
+
 def convert_pdf_to_text(
     input_pdf: Path,
     output_text: Path,
     images_dir: Path,
-    scale: int = 2,
+    scale: int = 4,
     document_type: str = "auto",
 ) -> int:
     """Render *input_pdf*, OCR each page, and write one HTML file to
@@ -213,12 +248,17 @@ def convert_pdf_to_text(
         input_pdf: Path to the PDF file to OCR.
         output_text: Path to the output HTML file.
         images_dir: Directory to store the rendered PNG files.
-        scale: Render scale for the PDF pages (default: 2, 144 DPI).
+        scale: Render scale for the PDF pages (default: 4, 288 DPI).
         document_type: Document type for the OCR model (default: auto).
 
     Output:
         The number of pages OCRed.
     """
+
+    logger.debug(
+        f"Converting {input_pdf} to {output_text} with images in {images_dir}, "
+        f"scale {scale}, document type {document_type}"
+    )
 
     # Render the PDF pages to PNG files.
     page_count = convert_pdf(
@@ -231,15 +271,17 @@ def convert_pdf_to_text(
     # OCR each page and collect the HTML fragments.
     page_text = []
     for number in range(1, page_count + 1):
-        show_progress("OCRizing", number, page_count)
+        logger.info(f"OCRizing page {number} of {page_count}")
 
-        page_text.append(
-            ocr_image(
-                images_dir / f"page-{number:04d}.png",
-                document_type,
-                number,
-            )
+        ocr_output = ocr_image(
+            images_dir / f"page-{number:04d}.png",
+            document_type,
+            number,
         )
+
+        logger.debug(f"Page {number} OCR output:\n{ocr_output}")
+
+        page_text.append(ocr_output)
 
     # Make an HTML document containing all pages, each wrapped in a ``section``
     # element with a ``data-page-number`` attribute.
@@ -271,7 +313,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
 
+    basicConfig(
+        level=DEBUG if args.debug else INFO,
+        format="%(levelname)s(%(name)s): %(message)s",
+    )
+
     images_dir = args.images_dir or default_images_dir(args.output_text)
+    logger.debug(f"Using images directory: {images_dir}")
 
     try:
         page_count = convert_pdf_to_text(
@@ -284,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (FileNotFoundError, OSError, ValueError) as error:
         raise SystemExit(f"error: {error}") from error
 
-    print(f"OCRed {page_count} page(s) to {args.output_text}")
+    logger.info(f"OCRed {page_count} page(s) to {args.output_text}")
     return 0
 
 
