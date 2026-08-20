@@ -120,6 +120,11 @@ class HtmlImageRetriever(HtmlWork):
             logger.warning("No image found on the cover page.")
             return self
 
+        # If largest image covers less than 50% of the page, ignore and return.
+        page_area = page.rect.width * page.rect.height
+        if largest_area < 0.5 * page_area:
+            return self
+
         xref = largest_image.get("xref", 0)
 
         if xref <= 0:
