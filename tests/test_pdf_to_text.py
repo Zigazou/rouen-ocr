@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 
 from rouen_ocr.pdf_to_text import (
-    OCR_BASE_PROMPT,
     convert_pdf_to_text,
     default_images_dir,
     html_document,
     ocr_image,
+    ocr_prompt,
 )
 
 
@@ -20,21 +20,28 @@ def test_default_images_dir_uses_output_stem() -> None:
     )
 
 
-def test_ocr_image_uses_structured_html_response(monkeypatch, tmp_path: Path) -> None:
-    """The structured response is extracted from the schema's HTML property."""
+def test_ocr_image_returns_the_model_response(monkeypatch, tmp_path: Path) -> None:
+    """The raw HTML response is returned from the model message."""
     image_path = tmp_path / "page.png"
 
     def fake_chat(**kwargs: object) -> object:
         assert kwargs == {
-            "model": "chandra-ocr-2",
+            "model": "hf.co/prithivMLmods/Chandra-OCR-2-GGUF:Q4_K_M",
             "messages": [
                 {
                     "role": "user",
-                    "content": OCR_PROMPT,
+                    "content": ocr_prompt("magazine", 2),
                     "images": [image_path],
                 }
             ],
-            "options": {"temperature": 0},
+            "options": {
+                "temperature": 0.0,
+                "top_p": 0.1,
+                "num_ctx": 16384,
+                "num_predict": 12384,
+                "repeat_penalty": 1.0,
+                "seed": 0,
+            },
             "think": False,
         }
         return type(
@@ -42,103 +49,85 @@ def test_ocr_image_uses_structured_html_response(monkeypatch, tmp_path: Path) ->
             (),
             {
                 "message": type(
-                    "Message", (), {
-                        "content": '{"html": "<p>Document text</p>"}'}
+                    "Message", (), {"content": "<p>Document text</p>"}
                 )()
             },
         )()
 
-    monkeypatch.setattr("rouen_ocr.pdf_to_text.ollama.chat", fake_chat)
+    monkeypatch.setattr("rouen_ocr.pdf_to_text.chat", fake_chat)
 
-    assert ocr_image(image_path, "chandra-ocr-2") == "<p>Document text</p>"
+    assert ocr_image(image_path, "magazine", 2) == "<p>Document text</p>"
 
 
-def test_ocr_image_rejects_missing_structured_html(monkeypatch, tmp_path: Path) -> None:
-    """An incomplete structured response cannot be written as an OCR result."""
+def test_ocr_image_rejects_missing_response_content(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An empty model response cannot be written as an OCR result."""
+
     def fake_chat(**kwargs: object) -> object:
         return type(
             "Response",
             (),
-            {"message": type("Message", (), {"content": "{}"})()},
+            {"message": type("Message", (), {"content": ""})()},
         )()
 
-    monkeypatch.setattr("rouen_ocr.pdf_to_text.ollama.chat", fake_chat)
+    monkeypatch.setattr("rouen_ocr.pdf_to_text.chat", fake_chat)
 
-    with pytest.raises(ValueError, match="did not return structured HTML"):
+    with pytest.raises(ValueError, match="did not contain any content"):
         ocr_image(tmp_path / "page.png", "chandra-ocr-2")
 
 
 def test_convert_pdf_to_text_renders_ocr_and_writes_result(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
-    """Each rendered page is sent to the loaded model and the output is HTML."""
+    """Each rendered page is sent to OCR and written into the HTML output."""
     images_dir = tmp_path / "pages"
     output_text = tmp_path / "output" / "document.txt"
 
     def fake_convert(*args: object) -> int:
         progress_callback = args[3]
         assert callable(progress_callback)
-        for completed in range(3):
+        for completed in range(1, 3):
             progress_callback(completed, 2)
         return 2
 
     monkeypatch.setattr("rouen_ocr.pdf_to_text.convert_pdf", fake_convert)
     calls: list[Path] = []
 
-    def fake_ocr(image: Path, received_model_name: str) -> str:
+    def fake_ocr(
+        image: Path, received_document_type: str, page_number: int
+    ) -> str:
         calls.append(image)
-        assert received_model_name == "chandra-ocr-2"
+        assert received_document_type == "auto"
+        assert page_number == len(calls)
         return f"<p>text {len(calls)}</p>"
 
     monkeypatch.setattr("rouen_ocr.pdf_to_text.ocr_image", fake_ocr)
+    monkeypatch.setattr(
+        "rouen_ocr.pdf_to_text.HtmlImageRetriever.replace_images",
+        lambda self, *_args: self,
+    )
 
     assert convert_pdf_to_text(
-        tmp_path / "input.pdf", output_text, images_dir, model_name="chandra-ocr-2"
+        tmp_path / "input.pdf", output_text, images_dir, document_type="auto"
     ) == 2
-    assert calls == [images_dir / "page-0001.png",
-                     images_dir / "page-0002.png"]
-    assert output_text.read_text(encoding="utf-8") == (
-        "<!doctype html>\n"
-        "<html>\n"
-        '<head><meta charset="utf-8"></head>\n'
-        "<body>\n"
-        '<section data-page-number="1">\n'
-        "<p>text 1</p>\n"
-        "</section>\n"
-        '<section data-page-number="2">\n'
-        "<p>text 2</p>\n"
-        "</section>\n"
-        "</body>\n"
-        "</html>\n"
-    )
+    assert calls == [images_dir / "page-0001.png", images_dir / "page-0002.png"]
+
+    output = output_text.read_text(encoding="utf-8")
+    assert '<section data-page-number="1">' in output
+    assert '<section data-page-number="2">' in output
+    assert "<p>text 1</p>" in output
+    assert "<p>text 2</p>" in output
     assert capsys.readouterr().out == (
-        "Rendering: 0/2 page(s)\n"
-        "Rendering: 1/2 page(s)\n"
-        "Rendering: 2/2 page(s)\n"
-        "OCRizing: 0/2 page(s)\n"
-        "OCRizing: 1/2 page(s)\n"
-        "OCRizing: 2/2 page(s)\n"
+        "Rendering: page 1 of 2\n"
+        "Rendering: page 2 of 2\n"
     )
 
 
-def test_html_fragment_discards_reasoning_and_document_wrapper() -> None:
-    """Reasoning and non-HTML wrapper text are never written to the output."""
-    response = """<think>Need to transcribe the page first.</think>
-    Here is the result:
-    ```html
-    <html><body><p>Document text</p></body></html>
-    ```"""
+def test_html_document_wraps_page_fragments() -> None:
+    """OCR fragments are wrapped in numbered page sections."""
+    output = str(html_document(["<p>Page one</p>", "<p>Page two</p>"]))
 
-    assert html_fragment(response) == "<p>Document text</p>"
-
-
-def test_html_fragment_discards_non_html_text_outside_the_markup() -> None:
-    """Only the HTML portion of a response is retained."""
-    assert html_fragment(
-        "Result: <p>Document text</p> Done.") == "<p>Document text</p>"
-
-
-def test_html_fragment_rejects_non_html_model_output() -> None:
-    """A response without HTML cannot accidentally be saved as OCR content."""
-    with pytest.raises(ValueError, match="did not return HTML"):
-        html_fragment("<think>OCR page</think>Document text")
+    assert output.startswith("<!DOCTYPE html>")
+    assert '<section data-page-number="1"><p>Page one</p></section>' in output
+    assert '<section data-page-number="2"><p>Page two</p></section>' in output

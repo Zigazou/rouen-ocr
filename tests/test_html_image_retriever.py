@@ -1,8 +1,5 @@
 """Tests for HTML image discovery and PDF extraction."""
 
-import sys
-from types import SimpleNamespace
-
 from rouen_ocr.html_image_retriever import HtmlImageRetriever
 
 
@@ -38,21 +35,20 @@ class FakeRect:
         return max(0, self.width) * max(0, self.height)
 
 
-def test_find_images_ignores_invalid_bounding_boxes(capsys) -> None:
+def test_find_images_reads_images_from_page_sections() -> None:
     retriever = HtmlImageRetriever(
+        '<section data-page-number="2">'
         '<div data-bbox="10 20 30 40" data-label="Image"></div>'
-        '<div data-bbox="invalid" data-label="Image"></div>'
+        '</section>'
+        '<div data-bbox="50 60 70 80" data-label="Image"></div>'
     )
 
-    assert [bbox.id("image") for bbox in retriever.find_images()] == [
-        "image-10-20-30-40"
+    assert [bbox.id() for bbox in retriever.bboxes] == [
+        "page2-10-20-30-40"
     ]
-    assert "Invalid data-bbox" in capsys.readouterr().out
 
 
-def test_extract_images_prefers_an_exact_native_pdf_image(
-    monkeypatch, tmp_path
-) -> None:
+def test_extract_images_prefers_an_exact_native_pdf_image(monkeypatch) -> None:
     class FakePage:
         rect = FakeRect(0, 0, 200, 100)
 
@@ -62,30 +58,22 @@ def test_extract_images_prefers_an_exact_native_pdf_image(
             return [{"bbox": (0, 0, 100, 50), "xref": 7}]
 
     class FakeDocument:
-        def __enter__(self) -> "FakeDocument":
-            return self
-
-        def __exit__(self, *_: object) -> None:
-            pass
-
-        @staticmethod
-        def extract_image(xref: int) -> dict:
-            assert xref == 7
-            return {"image": b"native image", "ext": "jpeg", "smask": 0}
+        def __len__(self) -> int:
+            return 1
 
         @staticmethod
         def __getitem__(page_number: int) -> FakePage:
             assert page_number == 0
             return FakePage()
 
-    fake_pymupdf = SimpleNamespace(Rect=FakeRect, open=lambda _: FakeDocument())
-    monkeypatch.setitem(sys.modules, "pymupdf", fake_pymupdf)
-
     retriever = HtmlImageRetriever(
+        '<section data-page-number="1">'
         '<div data-bbox="0 0 500 500" data-label="Image"></div>'
+        '</section>'
     )
+    retriever.document = FakeDocument()
+    monkeypatch.setattr(retriever, "_image_bytes", lambda xref: b"native image")
 
-    paths = retriever.extract_images("source.pdf", 0, tmp_path)
+    retriever.extract_images(1)
 
-    assert paths == [tmp_path / "page-0001-image-0001-0-0-500-500.jpeg"]
-    assert paths[0].read_bytes() == b"native image"
+    assert retriever.images["page1-0-0-500-500"] == b"native image"
