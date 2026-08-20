@@ -274,15 +274,34 @@ class HtmlCorrections(HtmlWork):
         are not part of the document content. The footer and header are
         identified by their data-label attributes, which are added by the OCR
         model.
+        
+        This method keeps the first page's header and footer, as they are
+        usually part of the document content. The first page is identified by
+        the data-page-number attribute.
         """
-        footers_headers = self.soup.find_all(
-            "div",
-            attrs={"data-label": True}
+        pages = self.soup.find_all(
+            "section",
+            attrs={"data-page-number": True}
         )
+        
+        for page in pages:
+            page_number = page.get("data-page-number")
+            if not isinstance(page_number, str) or not page_number.isdigit():
+                continue
 
-        for div in footers_headers:
-            if div.get("data-label") in ["Page-Header", "Page-Footer"]:
-                div.decompose()
+            page_number = int(page_number)
+
+            if page_number == 1:
+                continue
+
+            footers_headers = page.find_all(
+                "div",
+                attrs={"data-label": True}
+            )
+
+            for div in footers_headers:
+                if div.get("data-label") in ["Page-Header", "Page-Footer"]:
+                    div.decompose()
 
         self.remember("remove_footers_and_headers")
 

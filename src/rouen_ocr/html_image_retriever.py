@@ -143,6 +143,10 @@ class HtmlImageRetriever(HtmlWork):
 
         first_page_section.insert(0, img_tag)
 
+        # Remove other images on the cover page to avoid clutter.
+        for div in first_page_section.find_all("div", {"data-label": "Image"}):
+            div.decompose()
+
         return self
 
     def replace_images(
