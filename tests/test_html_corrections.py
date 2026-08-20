@@ -261,3 +261,28 @@ def test_corrections_must_be_applied_in_order() -> None:
         assert True
     else:
         assert False, "Expected MissingStepError was not raised."
+
+def test_group_captions_with_images() -> None:
+    """Test that captions are grouped with their corresponding images."""
+    html = (
+        '<div data-label="Image">'
+            '<img src="a"/>'
+        '</div>\n'
+        '<div data-label="Caption">caption1</div>'
+        '<div data-label="Image">'
+            '<img src="b"/>'
+        '</div>'
+    )
+    corrected = HtmlCorrections(html).group_captions_with_images()
+
+    assert str(corrected) == (
+        '<div data-label="Image">'
+            '<figure>'
+                '<img src="a"/>'
+                '<figcaption>caption1</figcaption>'
+            '</figure>'
+        '</div>\n'
+        '<div data-label="Image">'
+            '<img src="b"/>'
+        '</div>'
+    )
