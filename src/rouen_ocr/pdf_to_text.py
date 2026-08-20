@@ -290,8 +290,10 @@ def convert_pdf_to_text(
     output_text.parent.mkdir(parents=True, exist_ok=True)
 
     # Replace the images in the HTML fragments with data URI.
-    image_retriever = HtmlImageRetriever(html)
-    image_retriever.replace_images(input_pdf, show_progress_replacing)
+    image_retriever = (HtmlImageRetriever(html)
+        .replace_images(input_pdf, show_progress_replacing)
+        .show_largest_image_on_cover()
+    )
 
     corrected = HtmlCorrections(image_retriever).correct()
 

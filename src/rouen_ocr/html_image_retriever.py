@@ -78,6 +78,75 @@ class HtmlImageRetriever(HtmlWork):
                     BBox.from_chandra_attribute(bbox_str, page_number)
                 )
 
+    def show_largest_image_on_cover(self) -> Self:
+        """Show the largest image on the cover page of the document.
+
+        This method is intended for debugging purposes. It displays the largest
+        image found on the first page of the document using the default image
+        viewer.
+        """
+        if self.document is None:
+            raise RuntimeError("PDF document is not open.")
+
+        # Find the first page (section data-page-number="1").
+        first_page_section = self.soup.find(
+            "section",
+            {"data-page-number": "1"}
+        )
+
+        # Insert the image at the beginning of the first page section.
+        if first_page_section is None:
+            logger.warning("No section found for the cover page.")
+            return self
+
+        try:
+            page = self.document[0]
+        except IndexError as error:
+            raise ValueError(
+                "PDF does not contain a cover page."
+            ) from error
+
+        image_infos = page.get_image_info(xrefs=True)
+
+        # Find the largest image on the cover page.
+        largest_image = None
+        largest_area = 0
+        for info in image_infos:
+            image_rect = Rect(info["bbox"])
+            area = image_rect.get_area()
+            if area > largest_area:
+                largest_area = area
+                largest_image = info
+
+        if largest_image is None:
+            logger.warning("No image found on the cover page.")
+            return self
+
+        xref = largest_image.get("xref", 0)
+
+        if xref <= 0:
+            logger.warning("No valid image found on the cover page.")
+            return self
+
+        image_bytes = self._image_bytes(xref)
+        textual_alternative = alt_image(image_bytes)
+
+        # Insert the image into the HTML for display.
+        data_uri = (
+            "data:image/jpeg;base64,"
+            f"{b64encode(image_bytes).decode('utf-8')}"
+        )
+
+        img_tag = self.soup.new_tag(
+            "img",
+            src=data_uri,
+            alt=textual_alternative
+        )
+
+        first_page_section.insert(0, img_tag)
+
+        return self
+
     def replace_images(
         self,
         pdf_path: str | Path,
@@ -126,11 +195,6 @@ class HtmlImageRetriever(HtmlWork):
             data_uri = (
                 "data:image/jpeg;base64,"
                 f"{b64encode(image_bytes).decode('utf-8')}"
-            )
-
-            logger.info(
-                "Generating textual alternative for image "
-                f"at {str(bbox)} on page {bbox.page}"
             )
 
             textual_alternative = alt_image(image_bytes)
