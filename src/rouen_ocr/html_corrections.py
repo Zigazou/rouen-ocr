@@ -456,6 +456,23 @@ class HtmlCorrections(HtmlWork):
 
         return self
 
+    def remove_images_with_no_src(self) -> Self:
+        """Remove ``img`` tags that have no ``src`` attribute.
+
+        This method removes ``img`` tags that have no ``src`` attribute, which
+        are usually not part of the document content. The ``img`` tags are
+        identified by their lack of a ``src`` attribute.
+        """
+        self.require_step("remove_chandra_divs")
+
+        for img in self.soup.find_all("img"):
+            if not img.get("src"):
+                img.decompose()
+
+        self.remember("remove_images_with_no_src")
+
+        return self
+
     def correct(self) -> Self:
         """Apply all HTML corrections in the proper order."""
         return (self
@@ -473,4 +490,5 @@ class HtmlCorrections(HtmlWork):
             .remove_fake_bullets_in_lists()
             .normalize_heading_levels()
             .http_to_https()
+            .remove_images_with_no_src()
         )
