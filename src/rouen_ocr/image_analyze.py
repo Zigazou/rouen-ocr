@@ -1,4 +1,4 @@
-"""Generate textual alternative for images."""
+"""Analyze an image."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from ollama import chat, ResponseError
 
 logger = getLogger(__name__)
 
-# The model to use for generating a textual alternative for an image.
+# The model to use for analyzing images.
 ALT_MODEL = "huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF:Q8_0"
 
 # The number of context tokens to provide to the model. This is the maximum
@@ -18,38 +18,35 @@ ALT_MODEL = "huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF:Q8_0"
 ALT_NUM_CTX = 16384
 
 # The base prompt to provide to the model. This prompt is always provided.
-ALT_BASE_PROMPT = """
-Génère une alternative textuelle pour l'image fournie.
+ANA_BASE_PROMPT = """
+Analyze the provided image and determine its type.
 
-L'alternative textuelle doit être concise, descriptive et informative.
+There can be only the following types:
+- photo: a photograph of a real-world scene, object, or person.
+- big letter: the image is mainly a large decorative letter at the beginning of a paragraph or section, often used in illuminated manuscripts and other historical documents.
+- drawing: a drawing is a visual element that is not part of the original content of the document, but is instead a result of the scanning or OCR process. Drawings can include things like smudges, stains, or other marks on the page, as well as errors introduced by the OCR process itself.
 
-Elle doit décrire le contenu de l'image de manière à ce qu'une personne qui ne
-peut pas voir l'image puisse comprendre ce qu'elle représente.
-
-L'alternative textuelle doit être rédigée en français.
-
-Donne uniquement l'alternative textuelle, sans aucune autre information ni
-explication.
+Only return the type of the image, without any other information or explanation.
 """
 
 
-def alt_image(image: bytes) -> str:
-    """Generate a textual alternative for an image.
+def analyze_image(image: bytes) -> str:
+    """Analyze an image.
 
     Input:
         image: The image data as bytes.
 
     Output:
-        The textual alternative for the image.
+        The analysis of the image.
     """
-    logger.info("Generating a textual alternative for an image")
+    logger.info("Analyzing an image")
     try:
         result = chat(
             model=ALT_MODEL,
             messages=[
                 {
                     "role": "user",
-                    "content": ALT_BASE_PROMPT,
+                    "content": ANA_BASE_PROMPT,
                     "images": [image],
                 }
             ],

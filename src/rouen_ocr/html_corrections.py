@@ -334,6 +334,25 @@ class HtmlCorrections(HtmlWork):
 
         return self
 
+    def remove_lonely_chars(self) -> Self:
+        """Remove single-character text nodes that are not part of a word.
+
+        This method removes single-character text nodes that are not part of a
+        word. These characters are usually OCR errors and are not part of the
+        document content.
+        """
+        self.require_step("remove_chandra_divs")
+
+        for tag in self.soup.find_all(True):
+            for child in list(tag.children):
+                if isinstance(child, NavigableString) and len(child) == 1:
+                    if not child[0].isalnum():
+                        child.extract()
+
+        self.remember("remove_lonely_chars")
+
+        return self
+
     def correct(self) -> Self:
         """Apply all HTML corrections in the proper order."""
         return (self
@@ -345,5 +364,6 @@ class HtmlCorrections(HtmlWork):
             .remove_unneeded_ps()
             .set_title_from_first_heading()
             .remove_style_attributes()
+            .remove_lonely_chars()
             .http_to_https()
         )

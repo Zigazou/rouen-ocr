@@ -23,6 +23,7 @@ from pathlib import Path
 from rouen_ocr.html_work import HtmlWork
 from rouen_ocr.bbox import BBox
 from rouen_ocr.textual_alternative import alt_image
+from rouen_ocr.image_analyze import analyze_image
 
 PYMUPDF_JPEG = "jpg"
 PIL_JPEG = "JPEG"
@@ -111,6 +112,13 @@ class HtmlImageRetriever(HtmlWork):
             # Find the corresponding image bytes for this bounding box.
             image_bytes = self.images.get(bbox.id(), None)
             if image_bytes is None:
+                # Remove the div if no image was found for this bounding box.
+                div.decompose()
+                continue
+
+            # Remove the div if the image is a big letter.
+            if analyze_image(image_bytes) == "big letter":
+                div.decompose()
                 continue
 
             # Replace the div tag with an img tag containing the data URI of the
@@ -122,7 +130,7 @@ class HtmlImageRetriever(HtmlWork):
 
             logger.info(
                 "Generating textual alternative for image "
-                f"at {bbox} on page {bbox.page}"
+                f"at {str(bbox)} on page {bbox.page}"
             )
 
             textual_alternative = alt_image(image_bytes)
@@ -163,14 +171,29 @@ class HtmlImageRetriever(HtmlWork):
             None. Extracted images are stored in ``self.images``.
 
         Raises:
-            ValueError: If ``page_number`` or an extraction option is invalid.
+            ValueError: If ``page_number`` is out of range, ``render_scale`` is
+                not strictly positive, or ``match_threshold`` is not in the
+                range (0, 1].
+            RuntimeError: If the PDF document is not open.
         """
-        assert self.document is not None, "PDF document is not open."
-        assert page_number > 0, "page_number must be strictly positive."
-        assert render_scale > 0, "render_scale must be strictly positive."
-        assert 0 < match_threshold <= 1, (
-            "match_threshold must be in the range (0, 1]."
-        )
+        if self.document is None:
+            raise RuntimeError("PDF document is not open.")
+
+        if page_number < 1 or page_number > len(self.document):
+            raise ValueError(
+                f"page_number {page_number} is out of range. "
+                f"PDF has {len(self.document)} pages."
+            )
+
+        if render_scale <= 0:
+            raise ValueError(
+                f"render_scale {render_scale} must be strictly positive."
+            )
+
+        if match_threshold <= 0 or match_threshold > 1:
+            raise ValueError(
+                f"match_threshold {match_threshold} must be in the range (0, 1]."
+            )
 
         try:
             page = self.document[page_number - 1]

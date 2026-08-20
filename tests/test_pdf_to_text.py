@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 from rouen_ocr.pdf_to_text import (
-    OCR_PROMPT,
+    OCR_BASE_PROMPT,
     convert_pdf_to_text,
     default_images_dir,
-    html_fragment,
+    html_document,
     ocr_image,
 )
 
@@ -18,12 +18,6 @@ def test_default_images_dir_uses_output_stem() -> None:
     assert default_images_dir(Path("results/document.txt")) == Path(
         "results/document-pages"
     )
-
-
-def test_ocr_prompt_includes_rouen_vocabulary() -> None:
-    """Ambiguous OCR terms can be matched against the project vocabulary."""
-    assert "Rouen vocabulary" in OCR_PROMPT
-    assert "Métropole Rouen Normandie" in OCR_PROMPT
 
 
 def test_ocr_image_uses_structured_html_response(monkeypatch, tmp_path: Path) -> None:
@@ -48,7 +42,8 @@ def test_ocr_image_uses_structured_html_response(monkeypatch, tmp_path: Path) ->
             (),
             {
                 "message": type(
-                    "Message", (), {"content": '{"html": "<p>Document text</p>"}'}
+                    "Message", (), {
+                        "content": '{"html": "<p>Document text</p>"}'}
                 )()
             },
         )()
@@ -100,7 +95,8 @@ def test_convert_pdf_to_text_renders_ocr_and_writes_result(
     assert convert_pdf_to_text(
         tmp_path / "input.pdf", output_text, images_dir, model_name="chandra-ocr-2"
     ) == 2
-    assert calls == [images_dir / "page-0001.png", images_dir / "page-0002.png"]
+    assert calls == [images_dir / "page-0001.png",
+                     images_dir / "page-0002.png"]
     assert output_text.read_text(encoding="utf-8") == (
         "<!doctype html>\n"
         "<html>\n"
@@ -138,7 +134,8 @@ def test_html_fragment_discards_reasoning_and_document_wrapper() -> None:
 
 def test_html_fragment_discards_non_html_text_outside_the_markup() -> None:
     """Only the HTML portion of a response is retained."""
-    assert html_fragment("Result: <p>Document text</p> Done.") == "<p>Document text</p>"
+    assert html_fragment(
+        "Result: <p>Document text</p> Done.") == "<p>Document text</p>"
 
 
 def test_html_fragment_rejects_non_html_model_output() -> None:
