@@ -1,10 +1,12 @@
 """Post-process HTML returned by the OCR model."""
 
-from bs4.element import NavigableString, Tag
+import re
 from typing import Self
 
-from rouen_ocr.html_work import HtmlWork
+from bs4.element import NavigableString, Tag
+
 from rouen_ocr.bbox import BBox
+from rouen_ocr.html_work import HtmlWork
 
 
 class HtmlCorrections(HtmlWork):
@@ -389,43 +391,49 @@ class HtmlCorrections(HtmlWork):
         return self
 
     def remove_fake_bullets_in_lists(self) -> Self:
-        """Remove fake bullets in lists.
+        """Remove redundant punctuation bullets from list items.
 
-        This method removes fake bullets in lists, which are usually not part of
-        the document content. The fake bullets are identified by their parent
-        list tag.
+        HTML lists already render their own bullets. OCR output sometimes adds
+        another punctuation character followed by whitespace to the item text.
         """
         self.require_step("remove_chandra_divs")
 
-        for list_tag in self.soup.find_all(["ul", "ol"]):
-            for li in list_tag.find_all("li"):
-                # Remove fake bullets while preserving tags.
-                text = li.get_text(strip=True)
-                if len(text) < 2 or text[0:2].isalnum():
-                    continue
+        for li in self.soup.select("li"):
+            text_node = next(
+                (text for text in li.strings if text.strip()),
+                None
+            )
 
-                characters_to_remove = 2
-                for text_node in li.find_all(string=True):
-                    if characters_to_remove == 0:
-                        break
-
-                    leading_whitespace = len(text_node) - len(
-                        text_node.lstrip()
-                    )
-                    removable = min(
-                        characters_to_remove,
-                        len(text_node) - leading_whitespace,
-                    )
-                    if removable == 0:
-                        continue
-
-                    text_node.replace_with(
-                        text_node[:leading_whitespace]
-                        + text_node[leading_whitespace + removable:]
-                    )
-                    characters_to_remove -= removable
+            if text_node is not None:
+                text_node.replace_with(
+                    re.sub(r"^(\s*)[^\w\s]\s+", r"\1", text_node, count=1)
+                )
 
         self.remember("remove_fake_bullets_in_lists")
+
+        return self
+
+    def normalize_heading_levels(self) -> Self:
+        """Normalize heading levels for titles starting with a number.
+
+        For example, a heading like "1. Introduction" should be an h2, while
+        "1.1 Background" should be an h3, and so on.
+
+        This method adjusts the heading levels accordingly. It does not change
+        headings that do not start with a number.
+        """
+        self.require_step("increase_heading_levels")
+
+        for heading in self.soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+            text = heading.get_text(strip=True)
+
+            match = re.match(r"^(\d[\d.]*)\s+", text)
+            if match:
+                level = len(match.group(1).strip('.').split('.'))
+                new_level = min(max(level + 1, 1), 6)
+                heading.name = f"h{new_level}"
+
+        self.remember("normalize_heading_levels")
 
         return self
 
@@ -444,5 +452,6 @@ class HtmlCorrections(HtmlWork):
             .remove_lonely_chars()
             .correct_titles_case()
             .remove_fake_bullets_in_lists()
+            .normalize_heading_levels()
             .http_to_https()
         )

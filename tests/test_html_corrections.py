@@ -147,7 +147,19 @@ def test_correct_titles_case_capitalizes_uppercase_headings() -> None:
 
 def test_remove_fake_bullets_in_lists_preserves_real_list_content() -> None:
     """Remove two-character fake bullets but keep ordinary list items intact."""
-    html = "<ul><li>- First item</li><li><b>* Second item</b></li><li>Third item</li></ul>"
+    html = (
+        "<ul>"
+            "<li>- First item</li>"
+            "<li><b>* Second item</b></li>"
+            "<li>Third item"
+                "<ul>"
+                    "<li>- Subitem 1</li>"
+                    "<li><b>* Subitem 2</b></li>"
+                "</ul>"
+            "</li>"
+            "<li>A short item</li>"
+        "</ul>"
+    )
     corrected = (
         HtmlCorrections(html).
             remove_chandra_divs().
@@ -155,11 +167,79 @@ def test_remove_fake_bullets_in_lists_preserves_real_list_content() -> None:
     )
 
     assert str(corrected) == (
-        "<ul><li>First item</li><li><b>Second item</b></li><li>Third item</li></ul>"
+        "<ul>"
+            "<li>First item</li>"
+            "<li><b>Second item</b></li>"
+            "<li>Third item"
+                "<ul>"
+                    "<li>Subitem 1</li>"
+                    "<li><b>Subitem 2</b></li>"
+                "</ul>"
+            "</li>"
+            "<li>A short item</li>"
+        "</ul>"
     )
     assert corrected.steps == [
         "remove_chandra_divs",
         "remove_fake_bullets_in_lists",
+    ]
+
+def test_normalize_heading_levels_preserves_existing_hierarchy() -> None:
+    """Ensure that heading levels are normalized without changing their order."""
+    html = (
+        "<h1>Main Title</h1>"
+        "<h2>Subheading 1</h2>"
+        "<h3>Sub-subheading 1.1</h3>"
+        "<h2>Subheading 2</h2>"
+        "<h4>Sub-sub-subheading 2.1.1</h4>"
+    )
+    corrected = (HtmlCorrections(html)
+        .remove_chandra_divs()
+        .increase_heading_levels()
+        .normalize_heading_levels()
+    )
+
+    assert str(corrected) == (
+        "<h1>Main Title</h1>"
+        "<h2>Subheading 1</h2>"
+        "<h3>Sub-subheading 1.1</h3>"
+        "<h2>Subheading 2</h2>"
+        "<h4>Sub-sub-subheading 2.1.1</h4>"
+    )
+    assert corrected.steps == [
+        "remove_chandra_divs",
+        "increase_heading_levels",
+        "normalize_heading_levels",
+    ]
+
+
+def test_normalize_heading_levels_changes_levels_when_needed() -> None:
+    """Ensure that heading levels are normalized when needed."""
+    html = (
+        "<h1>Main Title</h1>"
+        "<h1>1. Subheading 1</h1>"
+        "<h1>1.1 Sub-subheading</h1>"
+        "<h2>1.2 Sub-subheading</h2>"
+        "<h2>1.2.1 Sub-sub-subheading</h2>"
+    )
+    corrected = (HtmlCorrections(html)
+        .remove_chandra_divs()
+        .increase_heading_levels()
+        .normalize_heading_levels()
+    )
+
+    assert str(corrected) == (
+        "<h1>Main Title</h1>"
+        "<h2>1. Subheading 1</h2>"
+        "<h3>1.1 Sub-subheading</h3>"
+        "<h3>1.2 Sub-subheading</h3>"
+        "<h4>1.2.1 Sub-sub-subheading</h4>"
+    )
+
+    assert corrected.steps == [
+        "remove_chandra_divs",
+        "increase_heading_levels",
+        "normalize_heading_levels",
     ]
 
 
