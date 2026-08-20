@@ -335,19 +335,19 @@ class HtmlCorrections(HtmlWork):
         return self
 
     def remove_lonely_chars(self) -> Self:
-        """Remove single-character text nodes that are not part of a word.
+        """Remove single-character paragraphs.
 
-        This method removes single-character text nodes that are not part of a
-        word. These characters are usually OCR errors and are not part of the
-        document content.
+        This method removes paragraphs that contain only a single character,
+        which are usually not part of the document content. The single character
+        paragraphs are identified by their length and the fact that they are not
+        part of a larger paragraph.
         """
         self.require_step("remove_chandra_divs")
 
-        for tag in self.soup.find_all(True):
-            for child in list(tag.children):
-                if isinstance(child, NavigableString) and len(child) == 1:
-                    if not child[0].isalnum():
-                        child.extract()
+        for tag in self.soup.find_all("p"):
+            text = tag.get_text(strip=True)
+            if len(text) == 1 and not text.isalnum():
+                tag.decompose()
 
         self.remember("remove_lonely_chars")
 
