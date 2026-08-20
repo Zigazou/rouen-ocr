@@ -10,23 +10,21 @@ The coordinates are normalized to a 0--1000 page coordinate system.
 """
 
 from __future__ import annotations
+
 from base64 import b64encode
-from typing import Callable, Self
+from collections.abc import Callable
 from logging import getLogger
-
-from pymupdf import Document, Pixmap, Matrix, Rect
-
-from PIL import Image
-from io import BytesIO
 from pathlib import Path
+from typing import Self
 
-from rouen_ocr.html_work import HtmlWork
+from pymupdf import Document, IRect, Matrix, Pixmap, Rect, csRGB
+
 from rouen_ocr.bbox import BBox
-from rouen_ocr.textual_alternative import alt_image
+from rouen_ocr.html_work import HtmlWork
 from rouen_ocr.image_analyze import analyze_image
+from rouen_ocr.textual_alternative import alt_image
 
 PYMUPDF_JPEG = "jpg"
-PIL_JPEG = "JPEG"
 
 logger = getLogger(__name__)
 
@@ -304,7 +302,20 @@ class HtmlImageRetriever(HtmlWork):
                 annots=False,
             )
 
-            self.images[bbox_id] = pixmap.tobytes(PYMUPDF_JPEG)
+            self.images[bbox_id] = self._pixmap_to_jpeg(pixmap)
+
+    @staticmethod
+    def _to_rgb_pixmap(pixmap: Pixmap) -> Pixmap:
+        """Convert a CMYK pixmap to RGB and return other pixmaps unchanged."""
+        if pixmap.colorspace is not None and pixmap.colorspace.n == 4:
+            return Pixmap(csRGB, pixmap)
+
+        return pixmap
+
+    @classmethod
+    def _pixmap_to_jpeg(cls, pixmap: Pixmap) -> bytes:
+        """Encode a pixmap as JPEG, converting CMYK before encoding."""
+        return cls._to_rgb_pixmap(pixmap).tobytes(PYMUPDF_JPEG)
 
     def _pdf_rect(self, page_rect: Rect, bbox: BBox) -> Rect:
         """Translate a normalized Chandra bounding box to PDF coordinates.
@@ -399,7 +410,7 @@ class HtmlImageRetriever(HtmlWork):
         if self.document is None:
             raise RuntimeError("PDF document is not open.")
 
-        return Pixmap(self.document, xref).tobytes(PYMUPDF_JPEG)
+        return self._pixmap_to_jpeg(Pixmap(self.document, xref))
 
     def _get_native_crop(
         self,
@@ -418,18 +429,22 @@ class HtmlImageRetriever(HtmlWork):
             The cropped image data in JPEG format.
         """
 
-        image_bytes = BytesIO(self._image_bytes(xref))
-        stream = BytesIO()
+        if self.document is None:
+            raise RuntimeError("PDF document is not open.")
 
-        with Image.open(image_bytes) as image:
-            left, top, right, bottom = map(round, [
-                (target.x0 - image_rect.x0) / image_rect.width * image.width,
-                (target.y0 - image_rect.y0) / image_rect.height * image.height,
-                (target.x1 - image_rect.x0) / image_rect.width * image.width,
-                (target.y1 - image_rect.y0) / image_rect.height * image.height,
-            ])
+        pixmap = self._to_rgb_pixmap(Pixmap(self.document, xref))
+        left, top, right, bottom = map(round, [
+            (target.x0 - image_rect.x0) / image_rect.width * pixmap.width,
+            (target.y0 - image_rect.y0) / image_rect.height * pixmap.height,
+            (target.x1 - image_rect.x0) / image_rect.width * pixmap.width,
+            (target.y1 - image_rect.y0) / image_rect.height * pixmap.height,
+        ])
+        clip = IRect(
+            pixmap.x + left,
+            pixmap.y + top,
+            pixmap.x + right,
+            pixmap.y + bottom,
+        )
+        cropped = Pixmap(pixmap, pixmap.width, pixmap.height, clip)
 
-            image.crop((left, top, right, bottom)).save(
-                stream, format=PIL_JPEG)
-
-        return stream.getvalue()
+        return cropped.tobytes(PYMUPDF_JPEG)

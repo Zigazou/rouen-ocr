@@ -1,5 +1,7 @@
 """Tests for HTML image discovery and PDF extraction."""
 
+from pymupdf import Document, Pixmap, Rect, csCMYK, csRGB
+
 from rouen_ocr.html_image_retriever import HtmlImageRetriever
 
 
@@ -77,3 +79,58 @@ def test_extract_images_prefers_an_exact_native_pdf_image(monkeypatch) -> None:
     retriever.extract_images(1)
 
     assert retriever.images["page1-0-0-500-500"] == b"native image"
+
+
+def test_pixmap_to_jpeg_converts_cmyk_to_rgb_before_encoding() -> None:
+    pixmap = Pixmap(csCMYK, 1, 1, bytes((0, 255, 255, 0)), False)
+
+    converted = HtmlImageRetriever._pixmap_to_jpeg(pixmap)
+    image = Pixmap(converted)
+
+    assert image.colorspace is not None
+    assert image.colorspace.name == csRGB.name
+    red, green, blue = image.pixel(0, 0)
+    assert red > 200
+    assert green < 50
+    assert blue < 50
+
+
+def test_pixmap_to_jpeg_keeps_rgb_colors() -> None:
+    pixmap = Pixmap(csRGB, 1, 1, bytes((255, 128, 0)), False)
+
+    converted = HtmlImageRetriever._pixmap_to_jpeg(pixmap)
+    image = Pixmap(converted)
+
+    assert image.colorspace is not None
+    assert image.colorspace.name == csRGB.name
+    red, green, blue = image.pixel(0, 0)
+    assert red > 200
+    assert 100 < green < 150
+    assert blue < 50
+
+
+def test_native_crop_uses_pymupdf_and_returns_rgb() -> None:
+    samples = bytes(
+        value
+        for y in range(4)
+        for x in range(4)
+        for value in (x * 50, y * 50, 0, 0)
+    )
+    source = Pixmap(csCMYK, 4, 4, samples, False)
+
+    with Document() as document:
+        page = document.new_page(width=100, height=100)
+        xref = page.insert_image(Rect(0, 0, 100, 100), pixmap=source)
+        retriever = HtmlImageRetriever("")
+        retriever.document = document
+
+        converted = retriever._get_native_crop(
+            xref,
+            Rect(0, 0, 100, 100),
+            Rect(25, 25, 75, 75),
+        )
+
+    image = Pixmap(converted)
+    assert image.colorspace is not None
+    assert image.colorspace.name == csRGB.name
+    assert (image.width, image.height) == (2, 2)
