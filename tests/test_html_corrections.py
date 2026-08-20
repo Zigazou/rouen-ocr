@@ -129,6 +129,40 @@ def test_increase_heading_levels_in_page_sections() -> None:
     )
 
 
+def test_correct_titles_case_capitalizes_uppercase_headings() -> None:
+    """Convert fully uppercase headings while preserving mixed-case ones."""
+    html = "<h1>INTRODUCTION</h1><h2>Already Correct</h2><p>BODY</p>"
+    corrected = (
+        HtmlCorrections(html).
+            remove_chandra_divs().
+            remove_emphasize_in_headings().
+            correct_titles_case()
+    )
+
+    assert str(corrected) == (
+        "<h1>Introduction</h1><h2>Already Correct</h2><p>BODY</p>"
+    )
+    assert corrected.steps[-1] == "correct_titles_case"
+
+
+def test_remove_fake_bullets_in_lists_preserves_real_list_content() -> None:
+    """Remove two-character fake bullets but keep ordinary list items intact."""
+    html = "<ul><li>- First item</li><li><b>* Second item</b></li><li>Third item</li></ul>"
+    corrected = (
+        HtmlCorrections(html).
+            remove_chandra_divs().
+            remove_fake_bullets_in_lists()
+    )
+
+    assert str(corrected) == (
+        "<ul><li>First item</li><li><b>Second item</b></li><li>Third item</li></ul>"
+    )
+    assert corrected.steps == [
+        "remove_chandra_divs",
+        "remove_fake_bullets_in_lists",
+    ]
+
+
 def test_corrections_must_be_applied_in_order() -> None:
     """Test that corrections must be applied in the correct order."""
     html = "<p>hello,</p><p>world</p>"

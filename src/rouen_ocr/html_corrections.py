@@ -353,6 +353,82 @@ class HtmlCorrections(HtmlWork):
 
         return self
 
+    def remove_emphasize_in_headings(self) -> Self:
+        """Remove ``em``, ``b``, ``strong``, ``i`` tags from headings.
+
+        This method removes ``em``, ``b``, ``strong``, and ``i`` tags from
+        headings, which are usually not part of the document content. These tags
+        are identified by their parent heading tag.
+        """
+        self.require_step("remove_chandra_divs")
+
+        for heading in self.soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+            for tag in heading.find_all(["em", "b", "strong", "i"]):
+                tag.unwrap()
+
+        self.remember("remove_emphasize_in_headings")
+
+        return self
+
+    def correct_titles_case(self) -> Self:
+        """Correct the case of titles.
+
+        This method corrects the case of titles, which are usually not part of
+        the document content. The titles are identified by their parent heading
+        tag.
+        """
+        self.require_step("remove_emphasize_in_headings")
+
+        for heading in self.soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+            text = heading.get_text(strip=True)
+            if text and text.isupper():
+                heading.string = text.capitalize()
+
+        self.remember("correct_titles_case")
+
+        return self
+
+    def remove_fake_bullets_in_lists(self) -> Self:
+        """Remove fake bullets in lists.
+
+        This method removes fake bullets in lists, which are usually not part of
+        the document content. The fake bullets are identified by their parent
+        list tag.
+        """
+        self.require_step("remove_chandra_divs")
+
+        for list_tag in self.soup.find_all(["ul", "ol"]):
+            for li in list_tag.find_all("li"):
+                # Remove fake bullets while preserving tags.
+                text = li.get_text(strip=True)
+                if len(text) < 2 or text[0:2].isalnum():
+                    continue
+
+                characters_to_remove = 2
+                for text_node in li.find_all(string=True):
+                    if characters_to_remove == 0:
+                        break
+
+                    leading_whitespace = len(text_node) - len(
+                        text_node.lstrip()
+                    )
+                    removable = min(
+                        characters_to_remove,
+                        len(text_node) - leading_whitespace,
+                    )
+                    if removable == 0:
+                        continue
+
+                    text_node.replace_with(
+                        text_node[:leading_whitespace]
+                        + text_node[leading_whitespace + removable:]
+                    )
+                    characters_to_remove -= removable
+
+        self.remember("remove_fake_bullets_in_lists")
+
+        return self
+
     def correct(self) -> Self:
         """Apply all HTML corrections in the proper order."""
         return (self
@@ -360,10 +436,13 @@ class HtmlCorrections(HtmlWork):
             .remove_footers_and_headers()
             .remove_chandra_divs()
             .increase_heading_levels()
+            .remove_emphasize_in_headings()
             .remove_unneeded_brs()
             .remove_unneeded_ps()
             .set_title_from_first_heading()
             .remove_style_attributes()
             .remove_lonely_chars()
+            .correct_titles_case()
+            .remove_fake_bullets_in_lists()
             .http_to_https()
         )
